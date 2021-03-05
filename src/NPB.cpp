@@ -32,6 +32,100 @@ namespace GameManager {
     }
 }
 
+class PlayerObject : public cocos2d::CCSprite {
+    public:
+        static constexpr const int shadow = 105;
+        inline static std::vector<cocos2d::CCSprite*> ghosts {};
+
+        void __thiscall setOpacity(unsigned int _o) {
+            reinterpret_cast<void(__thiscall*)(
+                PlayerObject*, unsigned int
+            )>(
+                base + 0x1f7d40
+            )(
+                this, _o
+            );
+        }
+
+        inline static void (__thiscall* death)(PlayerObject*, char);
+        static void __fastcall deathHook(PlayerObject* _po, void*, char _ch) {
+            death(_po, _ch);
+
+            if (ghosts.size() > 0)
+                if (ghosts.at(0) == nullptr)
+                    ghosts.clear();
+            
+            for (auto spr : ghosts)
+                spr->setVisible(true);
+
+            if (!GameManager::getGameVariable(GameManager::getSharedState(), ghostOptionKey)) {
+                auto outer = getChild<cocos2d::CCSprite*>(_po, 0);
+                auto inner = getChild<cocos2d::CCSprite*>(outer, 0);
+
+                auto ship = getChild<cocos2d::CCSprite*>(_po, 1);
+                auto shipinner = getChild<cocos2d::CCSprite*>(ship, 0);
+
+                auto obj = cocos2d::CCSprite::create();
+                
+                auto color1 = cocos2d::CCSprite::createWithTexture(outer->getTexture());
+                color1->setTextureRect(outer->getTextureRect());
+                color1->setTextureAtlas(outer->getTextureAtlas());
+                color1->setRotation(outer->getRotation());
+                color1->setScale(outer->getScale());
+                color1->setColor(outer->getColor());
+                color1->setOpacity(shadow);
+
+                auto color2 = cocos2d::CCSprite::createWithTexture(inner->getTexture());
+                color2->setTextureRect(inner->getTextureRect());
+                color2->setTextureAtlas(inner->getTextureAtlas());
+                color2->setRotation(inner->getRotation());
+                color2->setScale(inner->getScale());
+                color2->setColor(inner->getColor());
+                color2->setOpacity(shadow);
+
+                obj->addChild(color1);
+                obj->addChild(color2);
+
+                if (ship->isVisible()) {
+                    auto shipc = cocos2d::CCSprite::createWithTexture(ship->getTexture());
+                    shipc->setTextureRect(ship->getTextureRect());
+                    shipc->setTextureAtlas(ship->getTextureAtlas());
+                    shipc->setRotation(ship->getRotation());
+                    shipc->setScale(ship->getScale());
+                    shipc->setColor(ship->getColor());
+                    shipc->setOpacity(shadow);
+
+                    auto shipic = cocos2d::CCSprite::createWithTexture(shipinner->getTexture());
+                    shipic->setTextureRect(shipinner->getTextureRect());
+                    shipic->setTextureAtlas(shipinner->getTextureAtlas());
+                    shipic->setRotation(shipinner->getRotation());
+                    shipic->setScale(shipinner->getScale());
+                    shipic->setColor(shipinner->getColor());
+                    shipic->setOpacity(shadow);
+                    
+                    obj->addChild(shipc);
+                    obj->addChild(shipic);
+                }
+
+                obj->setPosition(_po->getPosition());
+                obj->setRotation(_po->getRotation());
+                obj->setScale(_po->getScale());
+
+                _po->getParent()->addChild(obj);
+
+                ghosts.push_back(obj);
+            }
+        }
+
+        static void loadHook() {
+            MH_CreateHook(
+                (PVOID)(base + 0x1efaa0),
+                (LPVOID)PlayerObject::deathHook,
+                (LPVOID*)&PlayerObject::death
+            );
+        }
+};
+
 namespace PlayLayer {
     cocos2d::CCLayer* layer = nullptr;
 
@@ -76,70 +170,42 @@ namespace PlayLayer {
         }
     }
 
+    inline void (* exit_)(void);
+    void exitHook(void) {
+        exit_();
+
+        PlayerObject::ghosts.clear();
+    }
+
+    inline void (__fastcall* reset_)(cocos2d::CCLayer*);
+    void __fastcall resetHook(cocos2d::CCLayer* _self) {
+        reset_(_self);
+
+        for (auto ghost : PlayerObject::ghosts)
+            ghost->setVisible(false);
+    }
+
     static MH_STATUS loadHook() {
-        return MH_CreateHook(
+        auto s = MH_CreateHook(
             (PVOID)(base + 0x1fb780),
             (LPVOID)PlayLayer::initHook,
             (LPVOID*)&PlayLayer::init_
         );
+
+        MH_CreateHook(
+            (PVOID)(base + 0x20bf00),
+            (LPVOID)PlayLayer::resetHook,
+            (LPVOID*)&PlayLayer::reset_
+        );
+
+        MH_CreateHook(
+            (PVOID)(base + 0x20dc00),
+            (LPVOID)PlayLayer::exitHook,
+            (LPVOID*)&PlayLayer::exit_
+        );
+
+        return s;
     }
-};
-
-class PlayerObject : public cocos2d::CCSprite {
-    public:
-        static constexpr const int shadow = 105;
-
-        void __thiscall setOpacity(unsigned int _o) {
-            reinterpret_cast<void(__thiscall*)(
-                PlayerObject*, unsigned int
-            )>(
-                base + 0x1f7d40
-            )(
-                this, _o
-            );
-        }
-
-        inline static void (__thiscall* death)(PlayerObject*, char);
-        static void __fastcall deathHook(PlayerObject* _po, void*, char _ch) {
-            death(_po, _ch);
-
-            if (GameManager::getGameVariable(GameManager::getSharedState(), ghostOptionKey)) {
-                auto outer = getChild<cocos2d::CCSprite*>(_po, 0);
-                auto inner = getChild<cocos2d::CCSprite*>(outer, 0);
-
-                auto obj = cocos2d::CCSprite::create();
-                
-                auto color1 = cocos2d::CCSprite::createWithTexture(outer->getTexture());
-                color1->setTextureRect(outer->getTextureRect());
-                color1->setTextureAtlas(outer->getTextureAtlas());
-                color1->setRotation(outer->getRotation());
-                color1->setColor(outer->getColor());
-                color1->setOpacity(shadow);
-
-                auto color2 = cocos2d::CCSprite::createWithTexture(inner->getTexture());
-                color2->setTextureRect(inner->getTextureRect());
-                color2->setTextureAtlas(inner->getTextureAtlas());
-                color2->setRotation(inner->getRotation());
-                color2->setColor(inner->getColor());
-                color2->setOpacity(shadow);
-
-                obj->addChild(color1);
-                obj->addChild(color2);
-
-                obj->setPosition(_po->getPosition());
-                obj->setRotation(_po->getRotation());
-
-                _po->getParent()->addChild(obj);
-            }
-        }
-
-        static void loadHook() {
-            MH_CreateHook(
-                (PVOID)(base + 0x1efaa0),
-                (LPVOID)PlayerObject::deathHook,
-                (LPVOID*)&PlayerObject::death
-            );
-        }
 };
 
 namespace MoreOptionsLayer {
@@ -165,7 +231,7 @@ namespace MoreOptionsLayer {
 
         MoreOptionsLayer::addToggle(
             self,
-            "Show Ghosts",
+            "Disable Ghosts",
             ghostOptionKey,
             "When you die, a ghost of your icon is placed where you died."
         );
