@@ -6,6 +6,7 @@ Basic gameplay mods for GD
 
  * Noclip (toggle in level pause menu)
  * Hide progress bar
+ * Ghosts (When you die, an opaque copy of your icon is left at the place you died)
 
 ## Not sure how often I'll add new mods ¯\_(ツ)_/¯
 
