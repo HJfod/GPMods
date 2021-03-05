@@ -36,6 +36,14 @@ class PlayerObject : public cocos2d::CCSprite {
     public:
         static constexpr const int shadow = 105;
         inline static std::vector<cocos2d::CCSprite*> ghosts {};
+        inline static bool alwaysShowGhosts = false;
+
+        void onGhostsToggle(cocos2d::CCObject*) {
+            alwaysShowGhosts = !alwaysShowGhosts;
+
+            for (auto ghost : ghosts)
+                ghost->setVisible(alwaysShowGhosts);
+        }
 
         void __thiscall setOpacity(unsigned int _o) {
             reinterpret_cast<void(__thiscall*)(
@@ -174,15 +182,16 @@ namespace PlayLayer {
     void exitHook(void) {
         exit_();
 
-        PlayerObject::ghosts.clear();
+        //PlayerObject::ghosts.clear();
     }
 
     inline void (__fastcall* reset_)(cocos2d::CCLayer*);
     void __fastcall resetHook(cocos2d::CCLayer* _self) {
         reset_(_self);
 
-        for (auto ghost : PlayerObject::ghosts)
-            ghost->setVisible(false);
+        if (!PlayerObject::alwaysShowGhosts)
+            for (auto ghost : PlayerObject::ghosts)
+                ghost->setVisible(false);
     }
 
     static MH_STATUS loadHook() {
@@ -326,6 +335,18 @@ class PauseLayer {
             test->setScale(.65);
 
             m->addChild(test);
+
+            auto ghosts = CCMenuItemToggler::createWithText_mine(
+                "Ghosts",
+                m,
+                PlayerObject::alwaysShowGhosts,
+                (cocos2d::SEL_MenuHandler)&PlayerObject::onGhostsToggle,
+                { 175, -38 }
+            );
+
+            ghosts->setScale(.65);
+
+            m->addChild(ghosts);
 
             _self->addChild(m);
         }
