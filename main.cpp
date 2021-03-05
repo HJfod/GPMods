@@ -12,6 +12,7 @@ DWORD WINAPI load_thread(void* hModule) {
         return 1;
     }
 
+    #ifdef GDCONSOLE
     NPB::awaitUnload();
 
     NPB::unload();
@@ -19,6 +20,7 @@ DWORD WINAPI load_thread(void* hModule) {
     FreeLibraryAndExitThread((HMODULE)hModule, 0);
 
     exit(0);
+    #endif
 
     return 0;
 }

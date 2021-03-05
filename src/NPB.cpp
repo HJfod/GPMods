@@ -9,12 +9,18 @@
 #define S_(x) std::to_string(x).c_str()
 #define NOCLIP_TEXT_TAG 69420
 
+template<typename T>
+static T getChild(cocos2d::CCNode* x, int i) {
+    return static_cast<T>(x->getChildren()->objectAtIndex(i));
+}
+
 uintptr_t base = (uintptr_t)GetModuleHandleA(0);
 
 static constexpr const unsigned char noclipVisibleOpacity = 150;
 static bool noclipToggled = false;
 static constexpr const char* progressBarOptionKey   = "5507";
 static constexpr const char* noclipTextOptionKey    = "5508";
+static constexpr const char* ghostOptionKey         = "5509";
 
 namespace GameManager {
 	inline void* (__cdecl* getSharedState)();
@@ -81,8 +87,7 @@ namespace PlayLayer {
 
 class PlayerObject : public cocos2d::CCSprite {
     public:
-        inline static int test = 255;
-        static constexpr const int shadow = 50;
+        static constexpr const int shadow = 105;
 
         void __thiscall setOpacity(unsigned int _o) {
             reinterpret_cast<void(__thiscall*)(
@@ -94,64 +99,45 @@ class PlayerObject : public cocos2d::CCSprite {
             );
         }
 
-        inline static cocos2d::CCObject* (__thiscall* objCopy)(cocos2d::CCObject* _obj);
-
-        inline static void (__thiscall* opacity)(PlayerObject*, unsigned int);
-        static void __fastcall opacityHook(PlayerObject* _p, void*, unsigned int _o) {
-            if (_o == 0)
-                opacity(_p, 0);
-            else
-                opacity(_p, test);
-
-            //auto p = reinterpret_cast<PlayerObject*>(
-            //    reinterpret_cast<uintptr_t>(_p) + 0xEC
-            //);
-
-            //p->setOpacity(test);
-        }
-
         inline static void (__thiscall* death)(PlayerObject*, char);
         static void __fastcall deathHook(PlayerObject* _po, void*, char _ch) {
             death(_po, _ch);
 
-            std::cout << "_po: " << _po << std::endl;
+            if (GameManager::getGameVariable(GameManager::getSharedState(), ghostOptionKey)) {
+                auto outer = getChild<cocos2d::CCSprite*>(_po, 0);
+                auto inner = getChild<cocos2d::CCSprite*>(outer, 0);
 
-            auto obj = new cocos2d::CCObject();
+                auto obj = cocos2d::CCSprite::create();
+                
+                auto color1 = cocos2d::CCSprite::createWithTexture(outer->getTexture());
+                color1->setTextureRect(outer->getTextureRect());
+                color1->setTextureAtlas(outer->getTextureAtlas());
+                color1->setRotation(outer->getRotation());
+                color1->setColor(outer->getColor());
+                color1->setOpacity(shadow);
 
-            std::cout << "obj: " << obj << std::endl;
+                auto color2 = cocos2d::CCSprite::createWithTexture(inner->getTexture());
+                color2->setTextureRect(inner->getTextureRect());
+                color2->setTextureAtlas(inner->getTextureAtlas());
+                color2->setRotation(inner->getRotation());
+                color2->setColor(inner->getColor());
+                color2->setOpacity(shadow);
 
-            auto pocopy = objCopy(obj);
+                obj->addChild(color1);
+                obj->addChild(color2);
 
-            std::cout << "pocopy: " << pocopy << std::endl;
+                obj->setPosition(_po->getPosition());
+                obj->setRotation(_po->getRotation());
 
-            //pocopy->setOpacity(shadow);
-
-            //PlayLayer::layer->addChild(pocopy);
+                _po->getParent()->addChild(obj);
+            }
         }
 
         static void loadHook() {
             MH_CreateHook(
-                (PVOID)(base + 0x1f7d40),
-                (LPVOID)PlayerObject::opacityHook,
-                (LPVOID*)&PlayerObject::opacity
-            );
-
-            MH_CreateHook(
                 (PVOID)(base + 0x1efaa0),
                 (LPVOID)PlayerObject::deathHook,
                 (LPVOID*)&PlayerObject::death
-            );
-
-            auto h = GetModuleHandleA("libcocos2d.dll");
-
-            std::cout << std::hex << "h: " << h << std::endl;
-
-            auto addr = GetProcAddress(h, "?copy@CCObject@cocos2d@@QAEPAV12@XZ");
-
-            std::cout << "addr: " << addr << std::endl;
-
-            objCopy = reinterpret_cast<cocos2d::CCObject*(__thiscall*)(cocos2d::CCObject*)>(
-                addr
             );
         }
 };
@@ -175,6 +161,13 @@ namespace MoreOptionsLayer {
             "Disable Noclip Text",
             noclipTextOptionKey,
             "Disables the text at the bottom-left of the screen when noclip is enabled."
+        );
+
+        MoreOptionsLayer::addToggle(
+            self,
+            "Show Ghosts",
+            ghostOptionKey,
+            "When you die, a ghost of your icon is placed where you died."
         );
 
         return res;
@@ -294,8 +287,10 @@ bool NPB::createHook() {
     if ((stat = MoreOptionsLayer::loadHook()) != MH_OK)
         return false;
 
+    #ifdef GDCONSOLE
     ModLdr::console::load();
-    
+    #endif
+
     PlayerObject::loadHook();
 
     GameManager::load();
@@ -304,20 +299,21 @@ bool NPB::createHook() {
 }
 
 void NPB::unload() {
+    #ifdef GDCONSOLE
     ModLdr::console::unload();
+    #endif
 
     MH_DisableHook(MH_ALL_HOOKS);
     MH_Uninitialize();
 }
 
+#ifdef GDCONSOLE
 void NPB::awaitUnload() {
     std::string inp;
     getline(std::cin, inp);
 
-    if (inp.starts_with("."))
-        PlayerObject::test = std::stoi(inp.substr(1));
-
     if (inp != "e")
         NPB::awaitUnload();
 }
+#endif
 
