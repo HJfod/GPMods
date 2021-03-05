@@ -12,6 +12,14 @@ DWORD WINAPI load_thread(void* hModule) {
         return 1;
     }
 
+    NPB::awaitUnload();
+
+    NPB::unload();
+
+    FreeLibraryAndExitThread((HMODULE)hModule, 0);
+
+    exit(0);
+
     return 0;
 }
 

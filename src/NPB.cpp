@@ -3,6 +3,7 @@
 #include <cocos2d.h>
 #include <MinHook.h>
 #include <process.h>
+#include "console.hpp"
 
 #define CHILD_(x, y) static_cast<cocos2d::CCNode*>(x->getChildren()->objectAtIndex(y))
 #define S_(x) std::to_string(x).c_str()
@@ -24,6 +25,136 @@ namespace GameManager {
         getGameVariable = reinterpret_cast<decltype(getGameVariable)>(base + 0xC9D30);
     }
 }
+
+namespace PlayLayer {
+    cocos2d::CCLayer* layer = nullptr;
+
+    inline void (__thiscall* init_)(cocos2d::CCLayer*, cocos2d::CCObject*);
+    void __fastcall initHook(cocos2d::CCLayer* _layer, void*, cocos2d::CCObject* _gamelevel_ig) {
+        init_(_layer, _gamelevel_ig);
+
+        layer = _layer;
+
+        auto gmIns = GameManager::getSharedState();
+
+        if (GameManager::getGameVariable(gmIns, progressBarOptionKey)) {
+            auto progressBar = (cocos2d::CCNode*)(_layer->getChildren()->objectAtIndex(8));
+            auto percentage  = (cocos2d::CCNode*)(_layer->getChildren()->objectAtIndex(9));
+
+            // setVisible doesn't work for some god knows reason so using this bodge instead
+            progressBar->setPositionY(-100);
+
+            auto winSize = cocos2d::CCDirector::sharedDirector()->getWinSize();
+
+            percentage->setPositionX(winSize.width / 2);
+
+            static_cast<cocos2d::CCLabelBMFont*>(percentage)->setAlignment(cocos2d::CCTextAlignment::kCCTextAlignmentCenter);
+        }
+
+        if (!GameManager::getGameVariable(gmIns, noclipTextOptionKey)) {
+            auto noclipText = cocos2d::CCLabelBMFont::create("Noclip enabled", "bigFont.fnt");
+            
+            noclipText->setScale(.5);
+            noclipText->setTag(NOCLIP_TEXT_TAG);
+
+            auto ntSize = noclipText->getScaledContentSize();
+
+            noclipText->setPosition(20 + ntSize.width / 2, 20 + ntSize.height / 2);
+
+            _layer->addChild(noclipText, 100);
+
+            if (noclipToggled)
+                noclipText->setOpacity(noclipVisibleOpacity);
+            else
+                noclipText->setOpacity(0);
+        }
+    }
+
+    static MH_STATUS loadHook() {
+        return MH_CreateHook(
+            (PVOID)(base + 0x1fb780),
+            (LPVOID)PlayLayer::initHook,
+            (LPVOID*)&PlayLayer::init_
+        );
+    }
+};
+
+class PlayerObject : public cocos2d::CCSprite {
+    public:
+        inline static int test = 255;
+        static constexpr const int shadow = 50;
+
+        void __thiscall setOpacity(unsigned int _o) {
+            reinterpret_cast<void(__thiscall*)(
+                PlayerObject*, unsigned int
+            )>(
+                base + 0x1f7d40
+            )(
+                this, _o
+            );
+        }
+
+        inline static cocos2d::CCObject* (__thiscall* objCopy)(cocos2d::CCObject* _obj);
+
+        inline static void (__thiscall* opacity)(PlayerObject*, unsigned int);
+        static void __fastcall opacityHook(PlayerObject* _p, void*, unsigned int _o) {
+            if (_o == 0)
+                opacity(_p, 0);
+            else
+                opacity(_p, test);
+
+            //auto p = reinterpret_cast<PlayerObject*>(
+            //    reinterpret_cast<uintptr_t>(_p) + 0xEC
+            //);
+
+            //p->setOpacity(test);
+        }
+
+        inline static void (__thiscall* death)(PlayerObject*, char);
+        static void __fastcall deathHook(PlayerObject* _po, void*, char _ch) {
+            death(_po, _ch);
+
+            std::cout << "_po: " << _po << std::endl;
+
+            auto obj = new cocos2d::CCObject();
+
+            std::cout << "obj: " << obj << std::endl;
+
+            auto pocopy = objCopy(obj);
+
+            std::cout << "pocopy: " << pocopy << std::endl;
+
+            //pocopy->setOpacity(shadow);
+
+            //PlayLayer::layer->addChild(pocopy);
+        }
+
+        static void loadHook() {
+            MH_CreateHook(
+                (PVOID)(base + 0x1f7d40),
+                (LPVOID)PlayerObject::opacityHook,
+                (LPVOID*)&PlayerObject::opacity
+            );
+
+            MH_CreateHook(
+                (PVOID)(base + 0x1efaa0),
+                (LPVOID)PlayerObject::deathHook,
+                (LPVOID*)&PlayerObject::death
+            );
+
+            auto h = GetModuleHandleA("libcocos2d.dll");
+
+            std::cout << std::hex << "h: " << h << std::endl;
+
+            auto addr = GetProcAddress(h, "?copy@CCObject@cocos2d@@QAEPAV12@XZ");
+
+            std::cout << "addr: " << addr << std::endl;
+
+            objCopy = reinterpret_cast<cocos2d::CCObject*(__thiscall*)(cocos2d::CCObject*)>(
+                addr
+            );
+        }
+};
 
 namespace MoreOptionsLayer {
     inline int(__thiscall* addToggle)(void* self, const char* display, const char* key, const char* extraInfo);
@@ -81,55 +212,6 @@ namespace EditorPauseLayer {
         return m;
     }
 }
-
-namespace PlayLayer {
-    inline void (__thiscall* init_)(cocos2d::CCLayer*, cocos2d::CCObject*);
-    void __fastcall initHook(cocos2d::CCLayer* _layer, void*, cocos2d::CCObject* _gamelevel_ig) {
-        init_(_layer, _gamelevel_ig);
-
-        auto gmIns = GameManager::getSharedState();
-
-        if (GameManager::getGameVariable(gmIns, progressBarOptionKey)) {
-            auto progressBar = (cocos2d::CCNode*)(_layer->getChildren()->objectAtIndex(8));
-            auto percentage  = (cocos2d::CCNode*)(_layer->getChildren()->objectAtIndex(9));
-
-            // setVisible doesn't work for some god knows reason so using this bodge instead
-            progressBar->setPositionY(-100);
-
-            auto winSize = cocos2d::CCDirector::sharedDirector()->getWinSize();
-
-            percentage->setPositionX(winSize.width / 2);
-
-            static_cast<cocos2d::CCLabelBMFont*>(percentage)->setAlignment(cocos2d::CCTextAlignment::kCCTextAlignmentCenter);
-        }
-
-        if (!GameManager::getGameVariable(gmIns, noclipTextOptionKey)) {
-            auto noclipText = cocos2d::CCLabelBMFont::create("Noclip enabled", "bigFont.fnt");
-            
-            noclipText->setScale(.5);
-            noclipText->setTag(NOCLIP_TEXT_TAG);
-
-            auto ntSize = noclipText->getScaledContentSize();
-
-            noclipText->setPosition(20 + ntSize.width / 2, 20 + ntSize.height / 2);
-
-            _layer->addChild(noclipText, 100);
-
-            if (noclipToggled)
-                noclipText->setOpacity(noclipVisibleOpacity);
-            else
-                noclipText->setOpacity(0);
-        }
-    }
-
-    static MH_STATUS loadHook() {
-        return MH_CreateHook(
-            (PVOID)(base + 0x1fb780),
-            (LPVOID)PlayLayer::initHook,
-            (LPVOID*)&PlayLayer::init_
-        );
-    }
-};
 
 inline bool writeMemory(
 	uintptr_t const address,
@@ -212,13 +294,30 @@ bool NPB::createHook() {
     if ((stat = MoreOptionsLayer::loadHook()) != MH_OK)
         return false;
 
+    ModLdr::console::load();
+    
+    PlayerObject::loadHook();
+
     GameManager::load();
 
     return MH_EnableHook(MH_ALL_HOOKS) == MH_OK;
 }
 
 void NPB::unload() {
+    ModLdr::console::unload();
+
     MH_DisableHook(MH_ALL_HOOKS);
     MH_Uninitialize();
+}
+
+void NPB::awaitUnload() {
+    std::string inp;
+    getline(std::cin, inp);
+
+    if (inp.starts_with("."))
+        PlayerObject::test = std::stoi(inp.substr(1));
+
+    if (inp != "e")
+        NPB::awaitUnload();
 }
 
