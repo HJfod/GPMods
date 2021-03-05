@@ -146,17 +146,19 @@ namespace PlayLayer {
         auto gmIns = GameManager::getSharedState();
 
         if (GameManager::getGameVariable(gmIns, progressBarOptionKey)) {
-            auto progressBar = (cocos2d::CCNode*)(_layer->getChildren()->objectAtIndex(8));
-            auto percentage  = (cocos2d::CCNode*)(_layer->getChildren()->objectAtIndex(9));
+            if (_layer->getChildrenCount() > 9) {
+                auto progressBar = (cocos2d::CCNode*)(_layer->getChildren()->objectAtIndex(8));
+                auto percentage  = (cocos2d::CCNode*)(_layer->getChildren()->objectAtIndex(9));
 
-            // setVisible doesn't work for some god knows reason so using this bodge instead
-            progressBar->setPositionY(-100);
+                // setVisible doesn't work for some god knows reason so using this bodge instead
+                progressBar->setPositionY(-100);
 
-            auto winSize = cocos2d::CCDirector::sharedDirector()->getWinSize();
+                auto winSize = cocos2d::CCDirector::sharedDirector()->getWinSize();
 
-            percentage->setPositionX(winSize.width / 2);
+                percentage->setPositionX(winSize.width / 2);
 
-            static_cast<cocos2d::CCLabelBMFont*>(percentage)->setAlignment(cocos2d::CCTextAlignment::kCCTextAlignmentCenter);
+                static_cast<cocos2d::CCLabelBMFont*>(percentage)->setAlignment(cocos2d::CCTextAlignment::kCCTextAlignmentCenter);
+            }
         }
 
         if (!GameManager::getGameVariable(gmIns, noclipTextOptionKey)) {
