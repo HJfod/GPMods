@@ -135,13 +135,24 @@ class PlayerObject : public cocos2d::CCSprite {
 };
 
 namespace PlayLayer {
-    cocos2d::CCLayer* layer = nullptr;
+    inline bool (__thiscall* init_)(cocos2d::CCLayer*, cocos2d::CCObject*);
+    bool __fastcall initHook(cocos2d::CCLayer* _layer, void*, cocos2d::CCObject* _gamelevel_ig) {
 
-    inline void (__thiscall* init_)(cocos2d::CCLayer*, cocos2d::CCObject*);
-    void __fastcall initHook(cocos2d::CCLayer* _layer, void*, cocos2d::CCObject* _gamelevel_ig) {
-        init_(_layer, _gamelevel_ig);
+        // clear ghosts so there aren't any
+        // wacky invalid ccsprites crashing gd
 
-        layer = _layer;
+        // also CCSprite::autorelease should
+        // deal with freeing up memory for the pointers
+        // right? so i just need to clear the
+        // vector and not have to worry about
+        // memory
+
+        // if i'm correct this should fix all the
+        // crashing issues tho
+
+        PlayerObject::ghosts.clear();
+
+        auto ret = init_(_layer, _gamelevel_ig);
 
         auto gmIns = GameManager::getSharedState();
 
@@ -178,13 +189,8 @@ namespace PlayLayer {
             else
                 noclipText->setOpacity(0);
         }
-    }
-
-    inline void (* exit_)(void);
-    void exitHook(void) {
-        exit_();
-
-        //PlayerObject::ghosts.clear();
+        
+        return ret;
     }
 
     inline void (__fastcall* reset_)(cocos2d::CCLayer*);
@@ -192,8 +198,10 @@ namespace PlayLayer {
         reset_(_self);
 
         if (!PlayerObject::alwaysShowGhosts)
-            for (auto ghost : PlayerObject::ghosts)
-                ghost->setVisible(false);
+            if (PlayerObject::ghosts.size() > 0)
+                for (auto ghost : PlayerObject::ghosts)
+                    if (ghost != nullptr)
+                        ghost->setVisible(false);
     }
 
     static MH_STATUS loadHook() {
@@ -207,12 +215,6 @@ namespace PlayLayer {
             (PVOID)(base + 0x20bf00),
             (LPVOID)PlayLayer::resetHook,
             (LPVOID*)&PlayLayer::reset_
-        );
-
-        MH_CreateHook(
-            (PVOID)(base + 0x20dc00),
-            (LPVOID)PlayLayer::exitHook,
-            (LPVOID*)&PlayLayer::exit_
         );
 
         return s;
@@ -322,7 +324,7 @@ class PauseLayer {
         static void __fastcall initHook(cocos2d::CCNode* _self) {
             init_(_self);
 
-            auto menu = (cocos2d::CCMenu*)(_self->getChildren()->objectAtIndex(6));
+            //auto menu = (cocos2d::CCMenu*)(_self->getChildren()->objectAtIndex(6));
 
             auto m = cocos2d::CCMenu::create();
 
@@ -331,10 +333,10 @@ class PauseLayer {
                 m,
                 noclipToggled,
                 (cocos2d::SEL_MenuHandler)&PauseLayer::onNoclipToggle,
-                { 175, -78 }
+                { 172, -163 }
             );
 
-            test->setScale(.65);
+            test->setScale(.65f);
 
             m->addChild(test);
 
@@ -343,10 +345,12 @@ class PauseLayer {
                 m,
                 PlayerObject::alwaysShowGhosts,
                 (cocos2d::SEL_MenuHandler)&PlayerObject::onGhostsToggle,
-                { 175, -38 }
+                { 172, -138 }
             );
 
-            ghosts->setScale(.65);
+            ghosts->setScale(.65f);
+
+            m->setScale(.75f);
 
             m->addChild(ghosts);
 
