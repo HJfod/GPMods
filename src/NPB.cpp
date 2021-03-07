@@ -14,6 +14,10 @@ static T getChild(cocos2d::CCNode* x, int i) {
     return static_cast<T>(x->getChildren()->objectAtIndex(i));
 }
 
+uintptr_t readPointer(uintptr_t _p) {
+    return *reinterpret_cast<uintptr_t*>(_p);
+}
+
 uintptr_t base = (uintptr_t)GetModuleHandleA(0);
 
 static constexpr const unsigned char noclipVisibleOpacity = 150;
@@ -58,6 +62,13 @@ class PlayerObject : public cocos2d::CCSprite {
         inline static void (__thiscall* death)(PlayerObject*, char);
         static void __fastcall deathHook(PlayerObject* _po, void*, char _ch) {
             death(_po, _ch);
+
+            // check if player is in the editor
+            if (
+                readPointer(
+                    readPointer(base + 0x3222D0) + 0x168
+                )
+            ) return;
 
             if (ghosts.size() > 0)
                 if (ghosts.at(0) == nullptr)
