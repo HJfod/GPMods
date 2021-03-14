@@ -1,8 +1,11 @@
 #include "NPB.hpp"
 #include "CCMenuItemToggler.hpp"
-#include <cocos2d.h>
+#include "ButtonSprite.hpp"
+#include "InputNode.hpp"
+#include "proc.hpp"
 #include <MinHook.h>
 #include <process.h>
+#include <thread>
 #include "console.hpp"
 
 #define CHILD_(x, y) static_cast<cocos2d::CCNode*>(x->getChildren()->objectAtIndex(y))
@@ -17,8 +20,6 @@ static T getChild(cocos2d::CCNode* x, int i) {
 uintptr_t readPointer(uintptr_t _p) {
     return *reinterpret_cast<uintptr_t*>(_p);
 }
-
-uintptr_t base = (uintptr_t)GetModuleHandleA(0);
 
 static constexpr const unsigned char noclipVisibleOpacity = 150;
 static bool noclipToggled = false;
@@ -146,6 +147,41 @@ class PlayerObject : public cocos2d::CCSprite {
 };
 
 namespace PlayLayer {
+    unsigned int inputDelay = 0;
+
+    struct pushButtonData {
+        cocos2d::CCLayer* layer;
+        int state;
+        bool player;
+    };
+
+    inline bool (__thiscall* push_)(cocos2d::CCLayer*, int, bool);
+    inline bool (__thiscall* release_)(cocos2d::CCLayer*, int, bool);
+
+    DWORD WINAPI pushButton(void* _data) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(inputDelay));
+
+        auto data = reinterpret_cast<pushButtonData*>(_data);
+
+        push_(data->layer, data->state, data->player);
+
+        delete data;
+
+        return 0;
+    }
+
+    DWORD WINAPI releaseButton(void* _data) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(inputDelay));
+
+        auto data = reinterpret_cast<pushButtonData*>(_data);
+
+        release_(data->layer, data->state, data->player);
+
+        delete data;
+
+        return 0;
+    }
+
     inline bool (__thiscall* init_)(cocos2d::CCLayer*, cocos2d::CCObject*);
     bool __fastcall initHook(cocos2d::CCLayer* _layer, void*, cocos2d::CCObject* _gamelevel_ig) {
 
@@ -215,6 +251,22 @@ namespace PlayLayer {
                         ghost->setVisible(false);
     }
 
+    bool __fastcall pushHook(cocos2d::CCLayer* _self, uintptr_t, int _state, bool _player) {
+        if (inputDelay)
+            CreateThread(0, 0x1000, pushButton, new pushButtonData { _self, _state, _player }, 0, 0);
+        else return push_(_self, _state, _player);
+        
+        return true;
+    }
+
+    bool __fastcall releaseHook(cocos2d::CCLayer* _self, uintptr_t, int _state, bool _player) {
+        if (inputDelay)
+            CreateThread(0, 0x1000, releaseButton, new pushButtonData { _self, _state, _player }, 0, 0);
+        else return release_(_self, _state, _player);
+        
+        return true;
+    }
+
     static MH_STATUS loadHook() {
         auto s = MH_CreateHook(
             (PVOID)(base + 0x1fb780),
@@ -228,15 +280,27 @@ namespace PlayLayer {
             (LPVOID*)&PlayLayer::reset_
         );
 
+        MH_CreateHook(
+            (PVOID)(base + 0x111500),
+            (LPVOID)PlayLayer::pushHook,
+            (LPVOID*)&PlayLayer::push_
+        );
+
+        MH_CreateHook(
+            (PVOID)(base + 0x111660),
+            (LPVOID)PlayLayer::releaseHook,
+            (LPVOID*)&PlayLayer::release_
+        );
+
         return s;
     }
 };
 
 namespace MoreOptionsLayer {
-    inline int(__thiscall* addToggle)(void* self, const char* display, const char* key, const char* extraInfo);
-	inline bool(__thiscall* init)(void*);
+    inline int(__thiscall* addToggle)(cocos2d::CCLayer* self, const char* display, const char* key, const char* extraInfo);
+	inline bool(__thiscall* init)(cocos2d::CCLayer*);
 
-	bool __fastcall initHook(void* self) {
+	bool __fastcall initHook(cocos2d::CCLayer* self) {
         bool res = init(self);
 
         MoreOptionsLayer::addToggle(
@@ -259,6 +323,27 @@ namespace MoreOptionsLayer {
             ghostOptionKey,
             "When you die, a ghost of your icon is placed where you died."
         );
+
+        /*
+
+        auto input = InputNode::create(100.0f, "(ms)", "bigFont.fnt", "0123456789", 10);
+
+        input->setPosition(50, 80);
+
+        auto dict = reinterpret_cast<cocos2d::CCDictionary*>(
+            reinterpret_cast<uintptr_t>(self) + 0x1E0
+        );
+
+        std::cout << dict << "\n";
+
+        auto keys = dict->allKeys();
+
+        std::cout << keys << "\n";
+
+        for (unsigned int i = 0; i < keys->count(); i++)
+            std::cout << reinterpret_cast<cocos2d::CCString*>(keys->objectAtIndex(i))->getCString() << "\n";
+
+            //*/
 
         return res;
     }
@@ -309,6 +394,16 @@ inline bool writeMemory(
     );
 }
 
+class TICB : public gd::CCTextInputNode {
+    public:
+        void onApplyDelay(cocos2d::CCObject* pSender) {
+            const char* t = this->m_pTextField->getString();
+
+            if (sizeof t)
+                PlayLayer::inputDelay = std::stoi(t);
+        }
+};
+
 class PauseLayer {
     public:
         void onNoclipToggle(cocos2d::CCObject* pSender) {
@@ -330,12 +425,14 @@ class PauseLayer {
                     text->setOpacity(0);
             }
         }
-
+        
         static inline void (__fastcall* init_)(cocos2d::CCNode*);
         static void __fastcall initHook(cocos2d::CCNode* _self) {
             init_(_self);
 
             //auto menu = (cocos2d::CCMenu*)(_self->getChildren()->objectAtIndex(6));
+
+            auto winSize = cocos2d::CCDirector::sharedDirector()->getWinSize();
 
             auto m = cocos2d::CCMenu::create();
 
@@ -351,6 +448,7 @@ class PauseLayer {
 
             m->addChild(test);
 
+
             auto ghosts = CCMenuItemToggler::createWithText_mine(
                 "Ghosts",
                 m,
@@ -364,6 +462,37 @@ class PauseLayer {
             m->setScale(.75f);
 
             m->addChild(ghosts);
+
+
+            auto dInput = gd::CCTextInputNode::create(
+                "Input delay (ms)",
+                nullptr,
+                "bigFont.fnt",
+                100.0f,
+                30.0f
+            );
+
+            dInput->setLabelPlaceholderColor({ 30, 60, 160 });
+            dInput->setMaxLabelScale(.75f);
+            dInput->setScale(.65f);
+            dInput->setAllowedChars("0123456789");
+            dInput->setPosition(winSize.width - 80.0f, winSize.height - 45.0f);
+
+            _self->addChild(dInput);
+
+            auto dSpr = ButtonSprite::create(
+                "Apply", 0, 0, "bigFont.fnt", "GJ_button_01.png", 0, .8f
+            );
+            dSpr->setScale(.6f);
+
+            auto dApply = CCMenuItemSpriteExtraGD::create(
+                dSpr, dInput, (cocos2d::SEL_MenuHandler)&TICB::onApplyDelay
+            );
+
+            dApply->setPosition(winSize.width / 2 - 80.0f, winSize.height / 2 - 85.0f);
+
+            m->addChild(dApply);
+
 
             _self->addChild(m);
         }
@@ -394,6 +523,18 @@ bool NPB::createHook() {
     #ifdef GDCONSOLE
     ModLdr::console::load();
     #endif
+
+    auto hwnd = gd::getGDWindow();
+    HANDLE hIcon = LoadImageA(0, "dumb.ico", IMAGE_ICON, 0, 0, LR_DEFAULTSIZE | LR_LOADFROMFILE);
+    if (hIcon) {
+        //Change both icons to the same icon handle.
+        SendMessage(hwnd, WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+        SendMessage(hwnd, WM_SETICON, ICON_BIG, (LPARAM)hIcon);
+
+        //This will ensure that the application icon gets changed too.
+        SendMessage(GetWindow(hwnd, GW_OWNER), WM_SETICON, ICON_SMALL, (LPARAM)hIcon);
+        SendMessage(GetWindow(hwnd, GW_OWNER), WM_SETICON, ICON_BIG, (LPARAM)hIcon);
+    }
 
     PlayerObject::loadHook();
 

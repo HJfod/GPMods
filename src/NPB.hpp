@@ -4,3 +4,5 @@ namespace NPB {
     void awaitUnload();
 }
 
+//#define GDCONSOLE
+
